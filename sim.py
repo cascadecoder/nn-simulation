@@ -183,6 +183,7 @@ class Node: # NN node
         # data for graphing (position within network)
         self.x = x
         self.y = y
+        self.avg = 0
 
         
         
@@ -209,6 +210,8 @@ class Node: # NN node
         else:
             self.inputamts = len(inputs)
             self.initweights()
+
+        self.avgWeights()
 
         
 
@@ -243,10 +246,16 @@ class Node: # NN node
                 r = random.random()
                 self.weights[i] += (random.random() - 0.5)*mutatestrengthbig
                 random.seed(r * 1000)
-
+    def avgWeights(self):
+        self.avg = 0
+        for w in self.weights:
+            self.avg += w
+        self.avg /= len(self.weights)
+        #print(self.avg)
     def recordData(self):
         global gdata, gdatacounts
-        gdata[self.x][self.y] += self.weights[0] # only using first weights for now
+        self.avgWeights()
+        gdata[self.x][self.y] += (self.avg) # only using first weights for now
         gdatacounts[self.x][self.y] += 1
         pass
  
@@ -828,7 +837,19 @@ def txt(s,pos):
     text = font.render(str(s), True, "black")
     textrect = text.get_rect()
     textrect.bottomleft = pos
+    
     window.blit(text, textrect)
+
+def txt2(s,pos, size, center, shift = False):
+    font = pygame.font.SysFont("monospace", size)
+    text = font.render(str(s), True, "white")
+    textrect = text.get_rect()
+    textrect.bottomleft = pos
+    if (center):
+        textrect.bottomleft = (pos[0]-textrect.width/2, pos[1]+textrect.height/2)
+    if (shift):
+        textrect.bottomleft = (pos[0]-textrect.width, pos[1]+textrect.height/2)
+    draw.blit(text, textrect)
 
 def displaySelected():
     if simPaused:
@@ -936,7 +957,10 @@ graphing = False
 graphMode = "selection"
 graphSelectionInit = True
 graphSelectedNode = -1
+graphAuto = True
+graphWidth = 100
 gbtns = []
+gsliders = []
 class GraphButton:
     def __init__(self, x, y, r):
         self.x = x
@@ -962,6 +986,64 @@ class GraphButton:
         else:
             self.smooth += (0 - self.smooth) / 4
             pygame.draw.circle(draw, pygame.Color(255,255,255,200), (self.x, self.y), self.r*self.smooth2 + self.smooth * 4)
+
+class GraphSlider:
+    def __init__(self, x1, y1, x2, y2, sw, sh): # start and end points, slider width and height
+        self.p1 = (x1, y1)
+        self.p2 = (x2, y2)
+        if (x1 == x2): # horizontal or vertical slider
+            self.mode = "v"
+        else:
+            self.mode = "h"
+        self.sx = x1 - sw / 2
+        self.sy = y1 - sh / 2
+        self.sh = sh
+        self.sw = sw
+        self.percentage = 0.5
+
+        # mouse stuff
+        self.touching = False
+        self.dragging = False
+
+        self.activated = False
+
+        gsliders.append(self)
+
+    def tick(self):
+        pygame.draw.line(draw, "darkgray", self.p1, self.p2, 2)
+        # mouse detection
+        if (mousepos[0] >= self.sx and mousepos[0] <= self.sx+self.sw and mousepos[1] >= self.sy and mousepos[1] <= self.sy+self.sh):
+            self.touching = True
+            if (mousedown):
+                self.dragging = True
+                self.activated = True
+        else:
+            self.touching = False
+        
+        if (not mousedown):
+            self.dragging = False
+        
+        c = "white"
+
+        if (self.dragging):
+            c = pygame.Color(50,50,50)
+            self.sx += (mousepos[0] - self.sw/2  - self.sx) / 4
+            if (self.sx > self.p2[0] - self.sw / 2):
+                self.sx = self.p2[0] - self.sw / 2
+            elif (self.sx < self.p1[0] - self.sw / 2):
+                self.sx = self.p1[0] - self.sw / 2
+
+        elif (self.touching):
+            c = "gray"
+        
+        self.percentage = (self.sx - (self.p1[0] - self.sw/2)) / (self.p2[0] - self.p1[0])
+        
+        pygame.draw.rect(draw, c, ((self.sx, self.sy), (self.sw, self.sh)), 0, 2)
+
+    def p(self):
+        return self.percentage
+
+
 
 def createRows(amt, height, margin):
     if (amt == 1):
@@ -1002,6 +1084,19 @@ while (running):
                 if (graphing):
                     graphSelectedNode = -1
                     graphMode = "selection"
+            if (event.dict["unicode"] == 'j'):
+                if (graphing):
+                    graphAuto = False
+            if (event.dict["unicode"] == 'b'):
+                graphWidth += 20
+            if (event.dict["unicode"] == 'v'):
+                graphWidth -= 20
+                if (graphWidth < 0):
+                    graphWidth = 0
+            if (event.dict["unicode"] == 'f'):
+                graphing = False
+                graphMode = "selection"
+                
         if (event.type == pygame.KEYUP):
             if (event.dict["unicode"] == 'x'):
                 deleting = False
@@ -1058,6 +1153,12 @@ while (running):
                     s = createRows(y, screenrect.h, marginy)
                     for i in s:
                         GraphButton(x, i, 25)
+                
+                # view all btn
+                GraphButton(50, screenrect.h-50, 20)
+
+                # create sliders
+                GraphSlider(50, 200, 100, 200, 20, 20)
             else:
                 for b in gbtns:
                     b.tick()
@@ -1075,35 +1176,62 @@ while (running):
             # good luck bro 
             # thanks i need it
             dist = screenrect.w - marginx * 2
-            pygame.draw.line(draw, pygame.Color(255,255,255,240), (marginx, screenrect.h / 2), (screenrect.w - marginx, screenrect.h / 2))
+            pygame.draw.line(draw, pygame.Color(255,255,255,240), (marginx*1.5, screenrect.h / 2), (screenrect.w - marginx, screenrect.h / 2), 3)
             
 
-            
+            if (graphSelectedNode == len(gbtns)-1):
+                graphAll = True
+            else:
+                graphAll = False
 
             # pos of current node
             gx = 0
             gy = 0
-            a = graphSelectedNode
-            for i in range(len(n)):
-                a -= n[i]
-                if (a >= 0):
-                    #print(str(a) + "nope" + str(n[i]))
-                    gx += 1
-                else:
-                    break
-            gy = n[gx] + a
+            if not graphAll:
+                a = graphSelectedNode
+                for i in range(len(n)):
+                    a -= n[i]
+                    if (a >= 0):
+                        #print(str(a) + "nope" + str(n[i]))
+                        gx += 1
+                    else:
+                        break
+                gy = n[gx] + a
             gmax = 0
-            # max of current node
-            for g in gdatacollection:
-                if (abs(gdatamax[gx][gy]) < abs(g[gx][gy])):
-                    gdatamax[gx][gy] = g[gx][gy]
-                    gmax = g[gx][gy]
-           
-            # DRAW THE EFFING THING
-            if (len (gdatacollection) > 400):
-                domainmin = len(gdatacollection) - 400
+
+            if (gsliders[0].activated):
+                graphAuto = False
+
+            if (len (gdatacollection) > graphWidth and graphAuto):
+                domainmin = len(gdatacollection) - graphWidth
             else:
                 domainmin = 0
+
+            
+            
+            if (not graphAuto):
+                domainmin = math.ceil(gsliders[0].p() * (len(gdatacollection)-1))
+                if (domainmin == len(gdatacollection)-1):
+                    domainmin += 1
+                if (gsliders[0].p() == 1):
+                    domainmin = len(gdatacollection) - 100
+
+            if (graphAll): # find max for all ndoes
+                for bx in range(nl):
+                    for by in range(n[bx]):
+                        for index in range(len(gdatacollection) - domainmin):
+                            g = gdatacollection[domainmin + index]
+                            if (abs(gmax) < abs(g[bx][by])):
+                                gmax = abs(g[bx][by])
+            else:
+                for index in range(len(gdatacollection) - domainmin): # find max for one node
+                    g = gdatacollection[domainmin + index]
+                    if (abs(gdatamax[gx][gy]) < abs(g[gx][gy])):
+                        gdatamax[gx][gy] = abs(g[gx][gy])
+                        gmax = abs(g[gx][gy]) # max eventually becomes 0 for some reason??
+           
+            # DRAW THE EFFING THING
+            
 
             dx = 0
             if (len(gdatacollection) > 1):
@@ -1119,10 +1247,10 @@ while (running):
                     
                     for index in range(len(gdatacollection)-domainmin):
                         g= gdatacollection[index+domainmin]
-                        drawx = marginx + (ir)*dx
+                        drawx = marginx *1.5 + (ir)*dx
                         drawy = (-1) * (g[bx][by] / gmax * (screenrect.h/2-marginy)) + screenrect.h / 2 # 100 should be gmax
                         c = "gray"
-                        if (bx == gx and by == gy):
+                        if (not graphAll and bx == gx and by == gy):
                             c = "green"
                         else:
                             pass
@@ -1131,7 +1259,7 @@ while (running):
                             pygame.draw.line(draw, c, prev, (drawx, drawy))
 
                         if (i == len(gdatacollection) - 1):
-                            text = font.render(str(bx) + ", " + str(by), True, "white")
+                            text = font.render(str(bx) + "," + str(by), True, "white")
                             textrect = text.get_rect()
                             textrect.bottomleft = (drawx + 10, drawy)
                             draw.blit(text, textrect)
@@ -1140,8 +1268,32 @@ while (running):
                         i += 1
                         ir += 1
             
+            pygame.draw.line(draw, "white", (marginx*1.5, marginy), (marginx*1.5, screenrect.h - marginy), 3)
+            drawx = marginx*1.5 - 10
+            drawy =  marginy
+            txt2((round(gmax)), (drawx,drawy), 13, True, True)
+            drawy = screenrect.h-marginy
+            txt2((-round(gmax)), (drawx,drawy), 13, True, True)
+            txt2((0), (drawx, screenrect.h / 2), 13, True, True)
+            y10 = math.floor(gmax / 10) * 10
+            
+            while (y10 > 0):
+                if (y10 != round(gmax)):
+                    drawy = (-1) * (y10 / gmax * (screenrect.h/2-marginy)) + screenrect.h / 2
+                    txt2((y10), (drawx, drawy), 10, True, True)
+                y10 -= 10
+            
+            while (y10 > -gmax):
+                if (y10 != -round(gmax) and y10 != 0):
+                    drawy = (-1) * (y10 / gmax * (screenrect.h/2-marginy)) + screenrect.h / 2
+                    txt2((y10), (drawx, drawy), 10, True, True)
+                y10 -= 10
 
-    window.blit(draw, (0,0))
+            # do the sliders
+            for s in gsliders:
+                s.tick()
+    if (graphing):
+        window.blit(draw, (0,0))
     pygame.display.flip()
     #clock.tick(60)
     
